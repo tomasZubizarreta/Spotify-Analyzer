@@ -15,7 +15,7 @@ class SpotifyHistoryRetriever:
     - Tus canciones guardadas
     """
 
-    def __init__(self, client_id: str, client_secret: str, redirect_uri: str, data_dir: str = "spotify_data"):
+    def __init__(self, client_id: str, client_secret: str, redirect_uri: str, data_dir: str = "./spotify_data"):
         """
         Inicializa el recolector de historial de Spotify.
         

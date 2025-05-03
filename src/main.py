@@ -1,5 +1,6 @@
 import os
 import json
+import configparser
 from datetime import datetime
 from spotify_simple_tracker import SimpleSpotifyTracker
 from spotify_history_retriever import SpotifyHistoryRetriever
@@ -15,8 +16,11 @@ class SpotifyManager:
     
     def __init__(self):
         # Configuración de la API de Spotify
-        self.client_id = ""  # Reemplaza con tu client_id
-        self.client_secret = ""  # Reemplaza con tu client_secret
+        config = configparser.ConfigParser()
+        config.read("./config.ini")
+
+        self.client_id = config.get("API_Keys", "client_id")  # Reemplaza con tu client_id
+        self.client_secret = config.get("API_Keys", "client_id")  # Reemplaza con tu client_secret
         self.redirect_uri = "http://localhost:8888/callback"
         self.data_dir = "spotify_data"
         

@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 class SimpleSpotifyTracker:
-    def __init__(self, client_id, client_secret, redirect_uri, scope, data_dir="spotify_data"):
+    def __init__(self, client_id, client_secret, redirect_uri, scope, data_dir="./spotify_data"):
         """
         Inicializa una versión simplificada del tracker de Spotify.
         
