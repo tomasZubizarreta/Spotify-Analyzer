@@ -3,9 +3,7 @@ from spotipy.oauth2 import SpotifyOAuth
 import json
 import os
 import time
-from datetime import datetime, timedelta
-import pandas as pd
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 class SpotifyHistoryRetriever:
     """
@@ -55,7 +53,7 @@ class SpotifyHistoryRetriever:
             print(f"Error al conectar con Spotify: {e}")
             self.user_info = None
 
-    def get_recently_played(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_recently_played(self, limit: int = 100) -> List[Dict[str, Any]]:
         """
         Obtiene las canciones reproducidas recientemente.
         

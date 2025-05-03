@@ -1,11 +1,9 @@
 import os
-import sys
 import json
-import time
 from datetime import datetime
 from spotify_simple_tracker import SimpleSpotifyTracker
 from spotify_history_retriever import SpotifyHistoryRetriever
-import lib
+from lib import SpotifyAnalyzer
 
 class SpotifyManager:
     """
@@ -17,8 +15,8 @@ class SpotifyManager:
     
     def __init__(self):
         # Configuración de la API de Spotify
-        self.client_id = "tu_client_id"  # Reemplaza con tu client_id
-        self.client_secret = "tu_client_secret"  # Reemplaza con tu client_secret
+        self.client_id = "eac4fe1c81214c4a9529be3d2bc26088"  # Reemplaza con tu client_id
+        self.client_secret = "7f17c3702e314d059ad16b70dce94c59"  # Reemplaza con tu client_secret
         self.redirect_uri = "http://localhost:8888/callback"
         self.data_dir = "spotify_data"
         
@@ -57,7 +55,7 @@ class SpotifyManager:
         """Configura y devuelve el analizador de datos"""
         if data_file is None:
             data_file = os.path.join(self.data_dir, "track_history.json")
-        self.analyzer = lib.SpotifyAnalyzer(data_file=data_file)
+        self.analyzer = SpotifyAnalyzer(data_file=data_file, data_dir="spotify_data")
         return self.analyzer
     
     def start_realtime_tracking(self, interval=30):
@@ -80,16 +78,6 @@ class SpotifyManager:
             self.setup_analyzer()
         
         print("Analizando datos...")
-        
-        # Crear visualizaciones
-        print("Generando patrones de escucha...")
-        patterns_file = self.analyzer.get_listening_patterns()
-        
-        print("Analizando patrones de estado de ánimo...")
-        mood_file = self.analyzer.analyze_mood_patterns()
-        
-        print("Agrupando canciones por estilo musical...")
-        clusters = self.analyzer.cluster_music_taste()
         
         print("Generando dashboard...")
         dashboard_file = self.analyzer.create_dashboard()
@@ -159,7 +147,7 @@ class SpotifyManager:
         combined_file = self.merge_history_files()
         
         # Paso 3: Analizar datos combinados
-        self.analyzer = lib.SpotifyAnalyzer(data_file=combined_file)
+        self.analyzer = SpotifyAnalyzer(data_file=combined_file, data_dir="spotify_data")
         dashboard_file = self.analyze_data()
         
         return dashboard_file
@@ -171,7 +159,8 @@ def print_menu():
     print("2. Descargar historial completo de Spotify")
     print("3. Analizar datos existentes")
     print("4. Análisis completo (descarga + análisis)")
-    print("5. Salir")
+
+    print("6. Salir")
     print("========================")
     return input("Selecciona una opción (1-5): ")
 
@@ -194,6 +183,20 @@ if __name__ == "__main__":
             dashboard_file = manager.run_complete_analysis()
             print(f"Análisis completo terminado. Dashboard creado en: {dashboard_file}")
         elif option == '5':
+            analyzer = SpotifyAnalyzer(data_file="ruta/a/tus_datos.json", data_dir="spotify_data")
+            # Patrones de escucha
+            analyzer.get_listening_patterns()
+
+            # Análisis de estado de ánimo
+            analyzer.analyze_mood_patterns()
+
+            # Agrupación de canciones por estilo
+            analyzer.cluster_music_taste()
+
+            dashboard_file = analyzer.create_dashboard() ## TODO
+            print(f"Dashboard creado en: {dashboard_file}")
+
+        elif option == '6':
             print("¡Hasta pronto!")
             break
         else:
