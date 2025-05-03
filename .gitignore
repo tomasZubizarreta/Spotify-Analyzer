@@ -1,1 +1,4 @@
 /.cache
+/spotify_data/track_history.json
+/spotify_data/listening_patterns.png
+/spotify_data/dashboard/index.html

@@ -1,173 +1,200 @@
-import spotipy
-from spotipy.oauth2 import SpotifyOAuth
-import time
-import json
 import os
+import sys
+import json
+import time
 from datetime import datetime
+from spotify_simple_tracker import SimpleSpotifyTracker
+from spotify_history_retriever import SpotifyHistoryRetriever
+import lib
 
-class SimpleSpotifyTracker:
-    def __init__(self, client_id, client_secret, redirect_uri, scope, data_dir="spotify_data"):
-        """
-        Inicializa una versión simplificada del tracker de Spotify.
+class SpotifyManager:
+    """
+    Clase principal que integra todas las funcionalidades de Spotify:
+    - Seguimiento en tiempo real de canciones (SimpleSpotifyTracker)
+    - Descarga del historial completo (SpotifyHistoryRetriever)
+    - Análisis de datos y visualizaciones (lib)
+    """
+    
+    def __init__(self):
+        # Configuración de la API de Spotify
+        self.client_id = "tu_client_id"  # Reemplaza con tu client_id
+        self.client_secret = "tu_client_secret"  # Reemplaza con tu client_secret
+        self.redirect_uri = "http://localhost:8888/callback"
+        self.data_dir = "spotify_data"
         
-        Args:
-            client_id: ID de cliente de la API de Spotify
-            client_secret: Secret de cliente de la API de Spotify
-            redirect_uri: URI de redirección para autenticación OAuth
-            scope: Permisos solicitados a Spotify
-            data_dir: Directorio donde se almacenarán los datos
-        """
-        # Configuración de autenticación
-        self.auth_manager = SpotifyOAuth(
-            client_id=client_id,
-            client_secret=client_secret,
-            redirect_uri=redirect_uri,
-            scope=scope,
-            open_browser=True
-        )
-        
-        # Crear cliente Spotify
-        self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
-        
-        # Configuración de almacenamiento
-        self.data_dir = data_dir
+        # Asegurar que existe el directorio de datos
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
-            
-        self.track_history_file = os.path.join(self.data_dir, "track_history.json")
-        self.current_track_id = None
-        self.track_history = self.load_track_history()
         
-    def load_track_history(self):
-        """Carga el historial de canciones desde el archivo local."""
-        if os.path.exists(self.track_history_file):
-            try:
-                with open(self.track_history_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
-                print("Error al leer el archivo de historial, creando uno nuevo.")
-                return []
-        return []
-    
-    def save_track_history(self):
-        """Guarda el historial de canciones en el archivo local."""
-        with open(self.track_history_file, 'w', encoding='utf-8') as f:
-            json.dump(self.track_history, f, ensure_ascii=False, indent=2)
-    
-    def get_current_track(self):
-        """Obtiene la información básica de la canción que se está reproduciendo actualmente."""
-        try:
-            # Obtener la reproducción actual
-            current_playback = self.sp.current_playback()
-            
-            # Verificar si hay algo reproduciéndose
-            if not current_playback or not current_playback.get('item'):
-                print("No se está reproduciendo nada en este momento.")
-                return None
-                
-            track = current_playback['item']
-            
-            # Verificar si la canción ya fue registrada (evitar duplicados)
-            if track['id'] == self.current_track_id:
-                return None
-                
-            self.current_track_id = track['id']
-            
-            # Formatear la información básica de la canción
-            track_info = {
-                'timestamp': datetime.now().isoformat(),
-                'id': track['id'],
-                'name': track['name'],
-                'artist': ', '.join([artist['name'] for artist in track['artists']]),
-                'album': track['album']['name'],
-                'popularity': track['popularity'],
-                'duration_ms': track['duration_ms'],
-                'explicit': track['explicit'],
-                'url': track['external_urls']['spotify'],
-                'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None
-            }
-            
-            return track_info
-            
-        except Exception as e:
-            print(f"Error al obtener la canción actual: {e}")
-            return None
-    
-    def track_current_song(self):
-        """Registra la canción actual y la guarda en el historial."""
-        track_info = self.get_current_track()
+        # Inicializar componentes
+        self.tracker = None
+        self.history_retriever = None
+        self.analyzer = None
         
-        if track_info:
-            print(f"Escuchando ahora: {track_info['name']} - {track_info['artist']}")
-            self.track_history.append(track_info)
-            self.save_track_history()
-            return track_info
-        return None
+    def setup_tracker(self):
+        """Configura y devuelve el rastreador de canciones en tiempo real"""
+        scope = "user-read-currently-playing user-read-playback-state"
+        self.tracker = SimpleSpotifyTracker(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri=self.redirect_uri,
+            scope=scope,
+            data_dir=self.data_dir
+        )
+        return self.tracker
+        
+    def setup_history_retriever(self):
+        """Configura y devuelve el recolector de historial"""
+        self.history_retriever = SpotifyHistoryRetriever(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri=self.redirect_uri,
+            data_dir=self.data_dir
+        )
+        return self.history_retriever
+        
+    def setup_analyzer(self, data_file=None):
+        """Configura y devuelve el analizador de datos"""
+        if data_file is None:
+            data_file = os.path.join(self.data_dir, "track_history.json")
+        self.analyzer = lib.SpotifyAnalyzer(data_file=data_file)
+        return self.analyzer
     
-    def start_tracking(self, interval=30):
+    def start_realtime_tracking(self, interval=30):
+        """Inicia el seguimiento en tiempo real de canciones"""
+        if not self.tracker:
+            self.setup_tracker()
+        print(f"Iniciando seguimiento en tiempo real cada {interval} segundos...")
+        self.tracker.start_tracking(interval=interval)
+    
+    def download_complete_history(self):
+        """Descarga todo el historial disponible desde Spotify"""
+        if not self.history_retriever:
+            self.setup_history_retriever()
+        print("Descargando historial completo de Spotify...")
+        self.history_retriever.get_all_history()
+    
+    def analyze_data(self):
+        """Analiza los datos recopilados y crea visualizaciones"""
+        if not self.analyzer:
+            self.setup_analyzer()
+        
+        print("Analizando datos...")
+        
+        # Crear visualizaciones
+        print("Generando patrones de escucha...")
+        patterns_file = self.analyzer.get_listening_patterns()
+        
+        print("Analizando patrones de estado de ánimo...")
+        mood_file = self.analyzer.analyze_mood_patterns()
+        
+        print("Agrupando canciones por estilo musical...")
+        clusters = self.analyzer.cluster_music_taste()
+        
+        print("Generando dashboard...")
+        dashboard_file = self.analyzer.create_dashboard()
+        
+        print(f"\nAnálisis completo. Dashboard disponible en: {dashboard_file}")
+        return dashboard_file
+    
+    def merge_history_files(self):
         """
-        Inicia el seguimiento continuo de las canciones reproducidas.
-        
-        Args:
-            interval: Tiempo en segundos entre cada verificación
+        Combina varios archivos de historial en uno solo para un análisis más completo
         """
-        print(f"Iniciando seguimiento de Spotify cada {interval} segundos. Presiona Ctrl+C para detener.")
-        try:
-            while True:
-                self.track_current_song()
-                time.sleep(interval)
-        except KeyboardInterrupt:
-            print("\nSeguimiento detenido.")
+        all_tracks = []
+        file_paths = [
+            os.path.join(self.data_dir, "track_history.json"),
+            os.path.join(self.data_dir, "recently_played.json"),
+            os.path.join(self.data_dir, "top_tracks_ultimo_mes.json"),
+            os.path.join(self.data_dir, "top_tracks_ultimos_6_meses.json"),
+            os.path.join(self.data_dir, "top_tracks_todo_el_tiempo.json")
+        ]
+        
+        for file_path in file_paths:
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        tracks = json.load(f)
+                        print(f"Cargados {len(tracks)} tracks desde {file_path}")
+                        
+                        # Asegurarse de que cada track tenga un timestamp si no lo tiene
+                        for track in tracks:
+                            if 'timestamp' not in track:
+                                if 'added_at' in track:
+                                    track['timestamp'] = track['added_at']
+                                else:
+                                    track['timestamp'] = datetime.now().isoformat()
+                        
+                        all_tracks.extend(tracks)
+                except Exception as e:
+                    print(f"Error al cargar {file_path}: {e}")
+        
+        # Eliminar duplicados basados en el ID de la canción
+        unique_tracks = {}
+        for track in all_tracks:
+            if 'id' in track and track['id'] not in unique_tracks:
+                unique_tracks[track['id']] = track
+        
+        combined_tracks = list(unique_tracks.values())
+        
+        # Guardar el archivo combinado
+        combined_file = os.path.join(self.data_dir, "all_tracks_combined.json")
+        with open(combined_file, 'w', encoding='utf-8') as f:
+            json.dump(combined_tracks, f, ensure_ascii=False, indent=2)
+            
+        print(f"Se han combinado {len(combined_tracks)} tracks únicos en {combined_file}")
+        return combined_file
     
-    def print_top_items(self, n=5):
-        """Muestra los artistas y canciones más escuchados."""
-        if not self.track_history:
-            print("No hay suficientes datos para mostrar estadísticas.")
-            return
-            
-        artists = {}
-        songs = {}
+    def run_complete_analysis(self):
+        """
+        Ejecuta todo el proceso:
+        1. Descarga el historial completo
+        2. Combina todos los archivos de historial
+        3. Analiza los datos combinados
+        """
+        # Paso 1: Descargar historial
+        self.download_complete_history()
         
-        for track in self.track_history:
-            # Contar artistas
-            artist = track['artist']
-            artists[artist] = artists.get(artist, 0) + 1
-            
-            # Contar canciones
-            song = f"{track['name']} - {track['artist']}"
-            songs[song] = songs.get(song, 0) + 1
+        # Paso 2: Combinar archivos
+        combined_file = self.merge_history_files()
         
-        # Mostrar top artistas
-        print(f"\nTOP {n} ARTISTAS:")
-        top_artists = sorted(artists.items(), key=lambda x: x[1], reverse=True)[:n]
-        for i, (artist, count) in enumerate(top_artists, 1):
-            print(f"{i}. {artist}: {count} reproducciones")
+        # Paso 3: Analizar datos combinados
+        self.analyzer = lib.SpotifyAnalyzer(data_file=combined_file)
+        dashboard_file = self.analyze_data()
         
-        # Mostrar top canciones
-        print(f"\nTOP {n} CANCIONES:")
-        top_songs = sorted(songs.items(), key=lambda x: x[1], reverse=True)[:n]
-        for i, (song, count) in enumerate(top_songs, 1):
-            print(f"{i}. {song}: {count} reproducciones")
+        return dashboard_file
 
+def print_menu():
+    """Muestra el menú de opciones"""
+    print("\n==== SPOTIFY MANAGER ====")
+    print("1. Iniciar seguimiento en tiempo real")
+    print("2. Descargar historial completo de Spotify")
+    print("3. Analizar datos existentes")
+    print("4. Análisis completo (descarga + análisis)")
+    print("5. Salir")
+    print("========================")
+    return input("Selecciona una opción (1-5): ")
 
 if __name__ == "__main__":
-    # Configuración de la API de Spotify
-    # Debes obtener estos valores desde https://developer.spotify.com/dashboard
-    CLIENT_ID = "tu_client_id"
-    CLIENT_SECRET = "tu_client_secret"
-    REDIRECT_URI = "http://127.0.0.1:8888/callback"
-    SCOPE = "user-read-currently-playing user-read-playback-state"
+    # Crear el gestor de Spotify
+    manager = SpotifyManager()
     
-    # Inicializar el tracker
-    tracker = SimpleSpotifyTracker(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        redirect_uri=REDIRECT_URI,
-        scope=SCOPE
-    )
-    
-    # Ejemplo: mostrar estadísticas existentes
-    tracker.print_top_items()
-    
-    # Iniciar el seguimiento continuo
-    tracker.start_tracking(interval=30)  # Verificar cada 30 segundos
+    while True:
+        option = print_menu()
+        
+        if option == '1':
+            interval = int(input("Intervalo de seguimiento en segundos (por defecto 30): ") or "30")
+            manager.start_realtime_tracking(interval)
+        elif option == '2':
+            manager.download_complete_history()
+        elif option == '3':
+            dashboard_file = manager.analyze_data()
+            print(f"Dashboard creado en: {dashboard_file}")
+        elif option == '4':
+            dashboard_file = manager.run_complete_analysis()
+            print(f"Análisis completo terminado. Dashboard creado en: {dashboard_file}")
+        elif option == '5':
+            print("¡Hasta pronto!")
+            break
+        else:
+            print("Opción no válida. Por favor, intenta de nuevo.")
