@@ -15,8 +15,8 @@ class SpotifyManager:
     
     def __init__(self):
         # Configuración de la API de Spotify
-        self.client_id = "eac4fe1c81214c4a9529be3d2bc26088"  # Reemplaza con tu client_id
-        self.client_secret = "7f17c3702e314d059ad16b70dce94c59"  # Reemplaza con tu client_secret
+        self.client_id = ""  # Reemplaza con tu client_id
+        self.client_secret = ""  # Reemplaza con tu client_secret
         self.redirect_uri = "http://localhost:8888/callback"
         self.data_dir = "spotify_data"
         
