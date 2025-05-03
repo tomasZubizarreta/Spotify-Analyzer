@@ -5,10 +5,10 @@ import json
 import os
 from datetime import datetime
 
-class SpotifyTracker:
+class SimpleSpotifyTracker:
     def __init__(self, client_id, client_secret, redirect_uri, scope, data_dir="spotify_data"):
         """
-        Inicializa el tracker de Spotify.
+        Inicializa una versión simplificada del tracker de Spotify.
         
         Args:
             client_id: ID de cliente de la API de Spotify
@@ -17,24 +17,27 @@ class SpotifyTracker:
             scope: Permisos solicitados a Spotify
             data_dir: Directorio donde se almacenarán los datos
         """
-        self.sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+        # Configuración de autenticación
+        self.auth_manager = SpotifyOAuth(
             client_id=client_id,
             client_secret=client_secret,
             redirect_uri=redirect_uri,
-            scope=scope
-        ))
+            scope=scope,
+            open_browser=True
+        )
         
+        # Crear cliente Spotify
+        self.sp = spotipy.Spotify(auth_manager=self.auth_manager)
+        
+        # Configuración de almacenamiento
         self.data_dir = data_dir
-        self.ensure_data_directory()
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
+            
         self.track_history_file = os.path.join(self.data_dir, "track_history.json")
         self.current_track_id = None
         self.track_history = self.load_track_history()
         
-    def ensure_data_directory(self):
-        """Asegura que el directorio de datos exista."""
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
-            
     def load_track_history(self):
         """Carga el historial de canciones desde el archivo local."""
         if os.path.exists(self.track_history_file):
@@ -50,27 +53,27 @@ class SpotifyTracker:
         """Guarda el historial de canciones en el archivo local."""
         with open(self.track_history_file, 'w', encoding='utf-8') as f:
             json.dump(self.track_history, f, ensure_ascii=False, indent=2)
-            
+    
     def get_current_track(self):
-        """Obtiene la información de la canción que se está reproduciendo actualmente."""
+        """Obtiene la información básica de la canción que se está reproduciendo actualmente."""
         try:
+            # Obtener la reproducción actual
             current_playback = self.sp.current_playback()
             
+            # Verificar si hay algo reproduciéndose
             if not current_playback or not current_playback.get('item'):
+                print("No se está reproduciendo nada en este momento.")
                 return None
                 
             track = current_playback['item']
             
-            # Comprobar si la canción es diferente a la última registrada
+            # Verificar si la canción ya fue registrada (evitar duplicados)
             if track['id'] == self.current_track_id:
                 return None
                 
             self.current_track_id = track['id']
             
-            # Obtener detalles de audio de la canción
-            audio_features = self.sp.audio_features(track['id'])[0] if track['id'] else None
-            
-            # Formatear la información de la canción
+            # Formatear la información básica de la canción
             track_info = {
                 'timestamp': datetime.now().isoformat(),
                 'id': track['id'],
@@ -81,35 +84,15 @@ class SpotifyTracker:
                 'duration_ms': track['duration_ms'],
                 'explicit': track['explicit'],
                 'url': track['external_urls']['spotify'],
-                'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None,
-                'preview_url': track['preview_url'],
-                'playing_device': current_playback.get('device', {}).get('name', 'Unknown')
+                'album_cover': track['album']['images'][0]['url'] if track['album']['images'] else None
             }
             
-            # Añadir características de audio si están disponibles
-            if audio_features:
-                audio_data = {
-                    'acousticness': audio_features.get('acousticness'),
-                    'danceability': audio_features.get('danceability'),
-                    'energy': audio_features.get('energy'),
-                    'instrumentalness': audio_features.get('instrumentalness'),
-                    'key': audio_features.get('key'),
-                    'liveness': audio_features.get('liveness'),
-                    'loudness': audio_features.get('loudness'),
-                    'mode': audio_features.get('mode'),
-                    'speechiness': audio_features.get('speechiness'),
-                    'tempo': audio_features.get('tempo'),
-                    'time_signature': audio_features.get('time_signature'),
-                    'valence': audio_features.get('valence')
-                }
-                track_info.update(audio_data)
-                
             return track_info
             
         except Exception as e:
             print(f"Error al obtener la canción actual: {e}")
             return None
-            
+    
     def track_current_song(self):
         """Registra la canción actual y la guarda en el historial."""
         track_info = self.get_current_track()
@@ -121,7 +104,7 @@ class SpotifyTracker:
             return track_info
         return None
     
-    def start_tracking(self, interval=60):
+    def start_tracking(self, interval=30):
         """
         Inicia el seguimiento continuo de las canciones reproducidas.
         
@@ -135,14 +118,14 @@ class SpotifyTracker:
                 time.sleep(interval)
         except KeyboardInterrupt:
             print("\nSeguimiento detenido.")
-            
-    def get_statistics(self):
-        """Genera estadísticas básicas sobre el historial de escucha."""
+    
+    def print_top_items(self, n=5):
+        """Muestra los artistas y canciones más escuchados."""
         if not self.track_history:
-            return "No hay datos suficientes para generar estadísticas."
+            print("No hay suficientes datos para mostrar estadísticas.")
+            return
             
         artists = {}
-        albums = {}
         songs = {}
         
         for track in self.track_history:
@@ -150,63 +133,41 @@ class SpotifyTracker:
             artist = track['artist']
             artists[artist] = artists.get(artist, 0) + 1
             
-            # Contar álbumes
-            album = track['album']
-            albums[album] = albums.get(album, 0) + 1
-            
             # Contar canciones
             song = f"{track['name']} - {track['artist']}"
             songs[song] = songs.get(song, 0) + 1
         
-        # Ordenar por frecuencia
-        top_artists = sorted(artists.items(), key=lambda x: x[1], reverse=True)[:5]
-        top_albums = sorted(albums.items(), key=lambda x: x[1], reverse=True)[:5]
-        top_songs = sorted(songs.items(), key=lambda x: x[1], reverse=True)[:5]
+        # Mostrar top artistas
+        print(f"\nTOP {n} ARTISTAS:")
+        top_artists = sorted(artists.items(), key=lambda x: x[1], reverse=True)[:n]
+        for i, (artist, count) in enumerate(top_artists, 1):
+            print(f"{i}. {artist}: {count} reproducciones")
         
-        stats = {
-            "total_tracks": len(self.track_history),
-            "unique_artists": len(artists),
-            "unique_albums": len(albums),
-            "unique_songs": len(songs),
-            "top_artists": top_artists,
-            "top_albums": top_albums,
-            "top_songs": top_songs
-        }
-        
-        return stats
-        
-    def export_data(self, format="json"):
-        """
-        Exporta los datos a diferentes formatos.
-        
-        Args:
-            format: Formato de exportación ("json" por defecto)
-        """
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        if format.lower() == "json":
-            filename = os.path.join(self.data_dir, f"spotify_export_{timestamp}.json")
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(self.track_history, f, ensure_ascii=False, indent=2)
-            return filename
-        else:
-            raise ValueError(f"Formato de exportación '{format}' no soportado")
+        # Mostrar top canciones
+        print(f"\nTOP {n} CANCIONES:")
+        top_songs = sorted(songs.items(), key=lambda x: x[1], reverse=True)[:n]
+        for i, (song, count) in enumerate(top_songs, 1):
+            print(f"{i}. {song}: {count} reproducciones")
 
 
 if __name__ == "__main__":
     # Configuración de la API de Spotify
     # Debes obtener estos valores desde https://developer.spotify.com/dashboard
-    CLIENT_ID = "client-id"
-    CLIENT_SECRET = "client-secret"
-    REDIRECT_URI = "http://localhost:8888/callback"
+    CLIENT_ID = "tu_client_id"
+    CLIENT_SECRET = "tu_client_secret"
+    REDIRECT_URI = "http://127.0.0.1:8888/callback"
     SCOPE = "user-read-currently-playing user-read-playback-state"
     
-    tracker = SpotifyTracker(
+    # Inicializar el tracker
+    tracker = SimpleSpotifyTracker(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE
     )
+    
+    # Ejemplo: mostrar estadísticas existentes
+    tracker.print_top_items()
     
     # Iniciar el seguimiento continuo
     tracker.start_tracking(interval=30)  # Verificar cada 30 segundos
