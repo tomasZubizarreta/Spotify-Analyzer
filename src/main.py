@@ -20,7 +20,7 @@ class SpotifyManager:
         config.read("./config.ini")
 
         self.client_id = config.get("API_Keys", "client_id")  # Reemplaza con tu client_id
-        self.client_secret = config.get("API_Keys", "client_id")  # Reemplaza con tu client_secret
+        self.client_secret = config.get("API_Keys", "client_secret")  # Reemplaza con tu client_secret
         self.redirect_uri = "http://localhost:8888/callback"
         self.data_dir = "spotify_data"
         
