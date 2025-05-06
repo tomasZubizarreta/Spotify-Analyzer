@@ -53,7 +53,7 @@ class SpotifyHistoryRetriever:
             print(f"Error al conectar con Spotify: {e}")
             self.user_info = None
 
-    def get_recently_played(self, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_recently_played(self, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Obtiene las canciones reproducidas recientemente.
         
@@ -64,6 +64,10 @@ class SpotifyHistoryRetriever:
             Lista de canciones reproducidas recientemente
         """
         try:
+            # Asegurarse de que limit no exceda 50 (límite de la API)
+            if limit > 50:
+                limit = 50
+                
             results = self.sp.current_user_recently_played(limit=limit)
             tracks = []
             
@@ -280,10 +284,10 @@ class SpotifyHistoryRetriever:
                 playlist_info = {
                     'id': playlist['id'],
                     'name': playlist['name'],
-                    'description': playlist['description'],
-                    'owner': playlist['owner']['display_name'],
+                    'description': playlist['description'] if playlist['description'] else "",
+                    'owner': playlist['owner']['display_name'] if playlist['owner']['display_name'] else playlist['owner']['id'],
                     'owner_id': playlist['owner']['id'],
-                    'public': playlist['public'],
+                    'public': playlist['public'] if playlist['public'] is not None else False,
                     'tracks_count': playlist['tracks']['total'],
                     'url': playlist['external_urls']['spotify'],
                     'image': playlist['images'][0]['url'] if playlist['images'] else None,
@@ -291,42 +295,53 @@ class SpotifyHistoryRetriever:
                 }
                 
                 # Obtener canciones de la playlist (máximo 100 por solicitud)
-                tracks_result = self.sp.playlist_tracks(playlist['id'], limit=100)
-                
-                # Primera página de canciones
-                for item in tracks_result['items']:
-                    if item['track']:  # A veces hay elementos nulos
-                        track = item['track']
-                        track_info = {
-                            'added_at': item['added_at'],
-                            'added_by': item['added_by']['id'] if item['added_by'] else None,
-                            'id': track['id'],
-                            'name': track['name'],
-                            'artist': ', '.join([artist['name'] for artist in track['artists']]),
-                            'album': track['album']['name'] if 'album' in track else '',
-                            'duration_ms': track['duration_ms']
-                        }
-                        playlist_info['tracks'].append(track_info)
-                
-                # Obtener el resto de páginas de canciones
-                while tracks_result['next']:
-                    tracks_result = self.sp.next(tracks_result)
+                try:
+                    tracks_result = self.sp.playlist_tracks(playlist['id'], limit=100)
+                    
+                    # Primera página de canciones
                     for item in tracks_result['items']:
                         if item['track']:  # A veces hay elementos nulos
-                            track = item['track']
-                            track_info = {
-                                'added_at': item['added_at'],
-                                'added_by': item['added_by']['id'] if item['added_by'] else None,
-                                'id': track['id'],
-                                'name': track['name'],
-                                'artist': ', '.join([artist['name'] for artist in track['artists']]),
-                                'album': track['album']['name'] if 'album' in track else '',
-                                'duration_ms': track['duration_ms']
-                            }
-                            playlist_info['tracks'].append(track_info)
+                            try:
+                                track = item['track']
+                                track_info = {
+                                    'added_at': item['added_at'],
+                                    'added_by': item['added_by']['id'] if item['added_by'] else None,
+                                    'id': track['id'],
+                                    'name': track['name'],
+                                    'artist': ', '.join([artist['name'] for artist in track['artists']]),
+                                    'album': track['album']['name'] if 'album' in track and track['album'] else '',
+                                    'duration_ms': track['duration_ms']
+                                }
+                                playlist_info['tracks'].append(track_info)
+                            except (KeyError, TypeError) as e:
+                                print(f"Error al procesar una canción en la playlist {playlist['name']}: {e}")
+                                continue
                     
-                    # Evitar exceder el límite de solicitudes a la API
-                    time.sleep(0.1)
+                    # Obtener el resto de páginas de canciones
+                    while tracks_result['next']:
+                        tracks_result = self.sp.next(tracks_result)
+                        for item in tracks_result['items']:
+                            if item['track']:  # A veces hay elementos nulos
+                                try:
+                                    track = item['track']
+                                    track_info = {
+                                        'added_at': item['added_at'],
+                                        'added_by': item['added_by']['id'] if item['added_by'] else None,
+                                        'id': track['id'],
+                                        'name': track['name'],
+                                        'artist': ', '.join([artist['name'] for artist in track['artists']]),
+                                        'album': track['album']['name'] if 'album' in track and track['album'] else '',
+                                        'duration_ms': track['duration_ms']
+                                    }
+                                    playlist_info['tracks'].append(track_info)
+                                except (KeyError, TypeError) as e:
+                                    print(f"Error al procesar una canción en la playlist {playlist['name']}: {e}")
+                                    continue
+                        
+                        # Evitar exceder el límite de solicitudes a la API
+                        time.sleep(0.1)
+                except Exception as e:
+                    print(f"Error al obtener canciones para la playlist {playlist['name']}: {e}")
                 
                 user_playlists.append(playlist_info)
                 
@@ -361,12 +376,17 @@ class SpotifyHistoryRetriever:
                 top_artists = self.get_top_artists(time_range='short_term', limit=5)
                 top_tracks = self.get_top_tracks(time_range='short_term', limit=5)
                 
-                seed_artists = [artist['id'] for artist in top_artists[:2]]
-                seed_tracks = [track['id'] for track in top_tracks[:3]]
+                seed_artists = [artist['id'] for artist in top_artists[:2] if 'id' in artist]
+                seed_tracks = [track['id'] for track in top_tracks[:3] if 'id' in track]
             
             # Asegurarse de no exceder el límite de 5 semillas en total
             seed_artists = seed_artists[:5] if seed_artists else []
             seed_tracks = seed_tracks[:5-len(seed_artists)] if seed_tracks else []
+            
+            # Verificar que tengamos al menos una semilla
+            if not seed_artists and not seed_tracks:
+                print("No se pudieron obtener semillas para las recomendaciones")
+                return []
             
             # Obtener recomendaciones
             recommendations = self.sp.recommendations(
@@ -437,7 +457,10 @@ class SpotifyHistoryRetriever:
         self.get_playlists()
         
         print("\n10. Obteniendo recomendaciones personalizadas...")
-        self.get_recommendations()
+        try:
+            self.get_recommendations()
+        except Exception as e:
+            print(f"Error al obtener recomendaciones, continuando con el resto del proceso: {e}")
         
         print("\n¡Todos los datos han sido descargados y guardados!")
         return True
